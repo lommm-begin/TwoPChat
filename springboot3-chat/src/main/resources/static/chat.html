@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UDP聊天室</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        .setup-panel {
+            background-color: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .setup-panel h2 {
+            margin-top: 0;
+            color: #3498db;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .chat-container {
+            display: none;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .chat-header {
+            background-color: #3498db;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 18px;
+        }
+        .chat-messages {
+            height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            background-color: #f9f9f9;
+        }
+        .message {
+            margin-bottom: 15px;
+            max-width: 70%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        .received {
+            background-color: #e6e6e6;
+            margin-right: auto;
+        }
+        .sent {
+            background-color: #3498db;
+            color: white;
+            margin-left: auto;
+        }
+        .chat-input {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #eee;
+            background-color: #fff;
+        }
+        #message-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        #send-button {
+            margin-left: 10px;
+        }
+        .status {
+            text-align: center;
+            margin-top: 10px;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+        .form-column {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+<h1>UDP聊天室</h1>
+
+<div id="setup-panel" class="setup-panel">
+    <h2>连接设置</h2>
+    <div class="form-group">
+        <label for="ip">对方IP地址:</label>
+        <input type="text" id="ip" placeholder="例如: 192.168.1.100">
+    </div>
+    <div class="form-row">
+        <div class="form-column">
+            <div class="form-group">
+                <label for="listen-port">本地监听端口:</label>
+                <input type="number" id="listen-port" placeholder="例如: 8888" value="8888">
+            </div>
+        </div>
+        <div class="form-column">
+            <div class="form-group">
+                <label for="target-port">对方端口号:</label>
+                <input type="number" id="target-port" placeholder="例如: 9999" value="9999">
+            </div>
+        </div>
+    </div>
+    <div class="form-group">
+        <label for="username">你的昵称:</label>
+        <input type="text" id="username" placeholder="输入你的昵称">
+    </div>
+    <button id="connect-button">连接</button>
+    <div id="status" class="status">等待连接...</div>
+</div>
+
+<div id="chat-container" class="chat-container">
+    <div class="chat-header">与 <span id="peer-name">对方</span> 的聊天</div>
+    <div id="chat-messages" class="chat-messages"></div>
+    <div class="chat-input">
+        <input type="text" id="message-input" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
+        <button id="send-button">发送</button>
+    </div>
+</div>
+
+<script>
+    const backendUrl = "http://localhost:8080";
+    let isConnected = false;
+    let pollInterval;
+    let lastMessageTime = 0;
+
+    const setupPanel = document.getElementById('setup-panel');
+    const chatContainer = document.getElementById('chat-container');
+    const connectButton = document.getElementById('connect-button');
+    const peerNameSpan = document.getElementById('peer-name');
+    const chatMessages = document.getElementById('chat-messages');
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-button');
+    const statusDiv = document.getElementById('status');
+
+    connectButton.addEventListener('click', initializeConnection);
+    sendButton.addEventListener('click', sendMessage);
+
+    async function initializeConnection() {
+        const ip = document.getElementById('ip').value;
+        const targetPort = document.getElementById('target-port').value;
+        const listenPort = document.getElementById('listen-port').value;
+        const username = document.getElementById('username').value;
+
+        if (!ip || !targetPort || !listenPort || !username) {
+            updateStatus("请填写所有连接信息!", "error");
+            return;
+        }
+
+        connectButton.disabled = true;
+        updateStatus("正在初始化连接...", "connecting");
+
+        try {
+            const initResponse = await fetch(`${backendUrl}/initialize`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ip: ip,
+                    targetPort: parseInt(targetPort),
+                    listenPort: parseInt(listenPort),
+                    username: username
+                })
+            });
+
+            if (!initResponse.ok) throw new Error('初始化失败');
+
+            const startResponse = await fetch(`${backendUrl}/start`, {
+                method: 'POST'
+            });
+
+            if (!startResponse.ok) throw new Error('启动监听失败');
+
+            isConnected = true;
+            setupPanel.style.display = 'none';
+            chatContainer.style.display = 'block';
+            peerNameSpan.textContent = `${ip}:${targetPort}`;
+            updateStatus("连接成功，开始监听消息", "success");
+
+            startMessagePolling();
+
+        } catch (error) {
+            console.error('连接错误:', error);
+            updateStatus(`连接失败: ${error.message}`, "error");
+            connectButton.disabled = false;
+        }
+    }
+
+    function startMessagePolling() {
+        pollInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`${backendUrl}/messages`);
+                if (!response.ok) throw new Error('获取消息失败');
+
+                const messages = await response.json();
+                if (messages && messages.length > 0) {
+                    messages.forEach(msg => {
+                        if (msg.timestamp > lastMessageTime) {
+                            // 处理三种可能的格式：
+                            // 1. 直接返回 content 字段：{"content":"你好"} → "你好"
+                            // 2. 返回字符串化的 JSON：{"content":"{\"content\":\"你好\"}"} → "你好"
+                            // 3. 直接返回字符串："你好" → "你好"
+                            let content = msg.content || msg;
+
+                            if (typeof content === 'string') {
+                                try {
+                                    // 尝试解析可能的嵌套 JSON
+                                    const parsed = JSON.parse(content);
+                                    content = parsed.content || content;
+                                } catch (e) {
+                                    // 不是 JSON 字符串，保持原样
+                                }
+                            }
+
+                            displayMessage(content, 'received');
+                            lastMessageTime = msg.timestamp;
+                        }
+                    });
+                }
+            } catch (error) {
+                console.warn('轮询错误:', error);
+            }
+        }, 1000);
+    }
+
+    async function sendMessage() {
+        if (!isConnected) return;
+
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        displayMessage(message, 'sent');
+        messageInput.value = '';
+
+        try {
+            const response = await fetch(`${backendUrl}/send`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    content: message
+                })
+            });
+
+            if (!response.ok) throw new Error('发送失败');
+        } catch (error) {
+            console.error('发送错误:', error);
+            updateStatus("消息发送失败", "error");
+        }
+    }
+
+    function displayMessage(content, type) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}`;
+        messageDiv.textContent = content;
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function updateStatus(message, type) {
+        statusDiv.textContent = message;
+        statusDiv.style.color = type === 'error' ? '#e74c3c' :
+            type === 'success' ? '#2ecc71' : '#7f8c8d';
+    }
+
+    function handleKeyPress(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    }
+
+    window.addEventListener('beforeunload', () => {
+        clearInterval(pollInterval);
+    });
+</script>
+</body>
+</html>
