@@ -11,4 +11,5 @@
 * 前后端分离，json格式传输数据
 
 ![image](https://github.com/user-attachments/assets/65f2a4fc-392e-4b02-8081-c54a8d1c99df)
-![image](https://github.com/user-attachments/assets/5a97090b-8bda-4b83-a15e-dca2b4f46db5)
+![image](https://github.com/user-attachments/assets/d6c45e80-e151-4110-8109-5ab7a40d6599)
+
