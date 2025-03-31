@@ -10,9 +10,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.Queue;
@@ -24,15 +22,12 @@ public class MessageContextService {
     private final Logger log = LoggerFactory.getLogger(this.getClass());
 
     private final Queue<MessageBody> queue = new ConcurrentLinkedQueue<>();
-    private DatagramSocket receiverSocket;
-    private DatagramPacket receiverPacket;
-    private DatagramSocket sendSocket;
-    private DatagramPacket sendPacket;
-
-    private byte[] buffer = new byte[1024 * 60];
+    private ServerSocket serverSocket;
+    private Socket socket;
 
     private Boolean init = false;
     private volatile boolean stop = false;
+    private byte[] buffer = new byte[1024 * 60];
 
     private InitalRequset initalRequset;
 
@@ -51,8 +46,12 @@ public class MessageContextService {
             log.info("未初始化，不能发送消息！");
             return;
         }
-        sendPacket = new DatagramPacket(message.getBytes(StandardCharsets.UTF_8), message.getBytes().length, InetAddress.getByName(initalRequset.getIp()), initalRequset.getTargetPort());
-        sendSocket.send(sendPacket);
+        OutputStream outputStream = socket.getOutputStream();
+        try (BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(outputStream)) {
+            bufferedOutputStream.write(message.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            log.error(e.getMessage() + "发送消息失败");
+        }
         log.info("发送消息: {}", message);
     }
 
@@ -66,13 +65,20 @@ public class MessageContextService {
             log.info("已经启动监听！");
         }
         while (stop && !Thread.currentThread().isInterrupted()) {
-            receiverSocket.receive(receiverPacket);
-            MessageBody messageBody = new MessageBody();
-            messageBody.setContent(new String(receiverPacket.getData(), 0, receiverPacket.getLength(), StandardCharsets.UTF_8));
-            messageBody.setTimestamp(System.currentTimeMillis());
-            queue.add(messageBody);
+            Socket accept = serverSocket.accept();
 
-            log.info("接收到消息: {}", messageBody.getContent());
+            InputStream inputStream = accept.getInputStream();
+
+            try (BufferedInputStream bufferedInputStream = new BufferedInputStream(inputStream)) {
+                int readCount = 0;
+                while ((readCount = bufferedInputStream.read(buffer)) != -1) {
+                    queue.add(new MessageBody(new String(buffer, 0, readCount, StandardCharsets.UTF_8), System.currentTimeMillis()));
+                }
+            } catch (Exception e) {
+                log.error(e.getMessage() + "接受消息时发生异常");
+            }
+
+            log.info("接收到消息: {}", queue.toArray());
         }
     }
 
@@ -98,9 +104,8 @@ public class MessageContextService {
         initalRequset.setListenPort(listenPort);
         initalRequset.setUsername(username);
         // 初始化监听
-        receiverSocket = new DatagramSocket(listenPort);
-        receiverPacket = new DatagramPacket(buffer, buffer.length);
-        sendSocket = new DatagramSocket();
+        this.serverSocket = new ServerSocket(listenPort);
+        this.socket = new Socket(ip, targetPort);
         init = true;
         stop = true;
 
@@ -110,11 +115,15 @@ public class MessageContextService {
     @PreDestroy
     public void shutdownAsyncExecutor() {
         stop = false;
-        if (receiverSocket != null) {
-            receiverSocket.close();
-        }
-        if (sendSocket != null) {
-            sendSocket.close();
+        try {
+            if (socket != null) {
+                socket.close();
+            }
+            if (serverSocket != null) {
+                serverSocket.close();
+            }
+        } catch (IOException e) {
+            log.error(e.getMessage() + "关闭时发生异常，已捕获");
         }
     }
 }

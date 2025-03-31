@@ -7,6 +7,11 @@ public class MessageBody {
     public MessageBody() {
     }
 
+    public MessageBody(String content, long timestamp) {
+        this.content = content;
+        this.timestamp = timestamp;
+    }
+
     @Override
     public String toString() {
         return "MessageBody{" +

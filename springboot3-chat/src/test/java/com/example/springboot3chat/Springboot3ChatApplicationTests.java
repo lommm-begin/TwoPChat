@@ -17,9 +17,9 @@ class Springboot3ChatApplicationTests {
 
 	@Test
 	public void test() throws Exception {
-		messageContextService.setInitalRequset("10.211.121.137", 8888, 8888,"lyx");
+		messageContextService.setInitalRequset("***", 8888, 8888,"lyx");
 
-		messageContextService.sendMessage("nhao");
+		messageContextService.sendMessage("nihao");
 
 		messageContextService.listen();
 
